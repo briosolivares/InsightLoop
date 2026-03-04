@@ -2,10 +2,550 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Insight Loop</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 14px 24px;
+      border-bottom: 1px solid #222;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #111;
+    }
+
+    header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; color: #fff; }
+    header span { font-size: 12px; color: #555; }
+
+    .panels {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 180px;
+    }
+
+    .resizer {
+      width: 4px;
+      background: #1e1e1e;
+      cursor: col-resize;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .resizer:hover, .resizer.active { background: #3b82f6; }
+
+    .panel-header {
+      padding: 12px 18px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #555;
+      border-bottom: 1px solid #1e1e1e;
+      background: #111;
+    }
+
+    .panel-body {
+      padding: 18px;
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    label { font-size: 12px; color: #888; display: block; margin-bottom: 5px; }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      background: #181818;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      color: #e8e8e8;
+      font-size: 13px;
+      padding: 10px 12px;
+      resize: vertical;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    textarea:focus, input[type="text"]:focus { border-color: #444; }
+    textarea { min-height: 90px; }
+
+    .btn {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-ghost { background: #1e1e1e; color: #aaa; }
+    .btn-ghost:hover:not(:disabled) { background: #252525; color: #e8e8e8; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+    .save-status { font-size: 12px; color: #555; min-height: 16px; }
+    .save-status.ok { color: #22c55e; }
+    .save-status.err { color: #ef4444; }
+
+    /* Interview list */
+    .interview-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .interview-card {
+      background: #181818;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .interview-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .interview-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: #e8e8e8;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .status-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .status-pending   { background: #1e1e1e; color: #666; }
+    .status-in_progress { background: #1e3a5f; color: #60a5fa; }
+    .status-completed { background: #14291a; color: #4ade80; }
+
+    .interview-card-actions { display: flex; gap: 6px; }
+
+    /* Create form */
+    .create-form {
+      background: #161616;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .create-form.hidden { display: none; }
+    .form-row { display: flex; gap: 8px; }
+
+    /* Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: #151515;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      width: 680px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .modal-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid #222;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h3 { font-size: 14px; font-weight: 600; }
+    .modal-body { padding: 18px; overflow-y: auto; }
+    .modal-body pre {
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      color: #ccc;
+      font-family: inherit;
+    }
+
+    /* Insights chat */
+    .chat-history {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat-msg { font-size: 13px; line-height: 1.6; }
+    .chat-msg.user { color: #93c5fd; }
+    .chat-msg.assistant { color: #d1d5db; }
+    .chat-msg .label { font-size: 11px; font-weight: 600; margin-bottom: 3px; color: #555; }
+
+    .chat-input-row {
+      display: flex;
+      gap: 8px;
+      padding-top: 10px;
+      border-top: 1px solid #1e1e1e;
+    }
+    .chat-input-row input { flex: 1; resize: none; }
+
+    .empty-state { color: #444; font-size: 13px; text-align: center; margin-top: 40px; }
+  </style>
 </head>
 <body>
+
+<header>
   <h1>Insight Loop</h1>
-  <p>Dashboard coming in Step 2.</p>
+  <span>Market Research Dashboard</span>
+</header>
+
+<div class="panels">
+
+  <!-- SETUP PANEL -->
+  <div class="panel" id="panel-setup" style="width:280px">
+    <div class="panel-header">Setup</div>
+    <div class="panel-body">
+      <div>
+        <label>Ideal Customer Profile</label>
+        <textarea id="icp" rows="5" placeholder="Describe your ideal customer, e.g.:&#10;&#10;Gender: Male / Female / Any&#10;Age: 28–45&#10;Job Title: Founder, CEO, Product Manager&#10;Income: $80k–$200k/year&#10;&#10;Psychographics:&#10;- Values: autonomy, speed, data-driven decisions&#10;- Priorities: growing revenue, reducing manual work&#10;- Habits: listens to podcasts, attends startup events&#10;- Pain points: too many tools, not enough time&#10;- Motivations: building something meaningful, financial freedom"></textarea>
+      </div>
+      <div>
+        <label>Hypotheses <span style="color:#444">(one per line)</span></label>
+        <textarea id="hypotheses" rows="7" placeholder="Founders struggle to find qualified interviewees&#10;Current tools are too complex&#10;..."></textarea>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button class="btn btn-primary" onclick="saveConfig()">Save</button>
+        <span class="save-status" id="save-status"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="resizer" id="resizer-1"></div>
+
+  <!-- INTERVIEWS PANEL -->
+  <div class="panel" id="panel-interviews" style="flex:1">
+    <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>Interviews</span>
+      <button class="btn btn-ghost btn-sm" onclick="toggleCreateForm()">+ New</button>
+    </div>
+    <div class="panel-body">
+
+      <div class="create-form hidden" id="create-form">
+        <div>
+          <label>Interview name *</label>
+          <input type="text" id="new-name" placeholder="e.g. Interview with Sarah Chen">
+        </div>
+        <div>
+          <label>Notes <span style="color:#444">(optional)</span></label>
+          <input type="text" id="new-notes" placeholder="e.g. Referred via YC community">
+        </div>
+        <div class="form-row">
+          <button class="btn btn-primary" onclick="createInterview()">Create</button>
+          <button class="btn btn-ghost" onclick="toggleCreateForm()">Cancel</button>
+          <span class="save-status" id="create-status" style="line-height:32px;"></span>
+        </div>
+      </div>
+
+      <div class="interview-list" id="interview-list">
+        <p class="empty-state" id="empty-state">No interviews yet.<br>Click + New to create one.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="resizer" id="resizer-2"></div>
+
+  <!-- INSIGHTS PANEL -->
+  <div class="panel" id="panel-insights" style="width:320px">
+    <div class="panel-header">Insights</div>
+    <div class="panel-body">
+      <div class="chat-history" id="chat-history">
+        <p class="empty-state">Ask a question across all completed interviews.</p>
+      </div>
+      <div class="chat-input-row">
+        <input type="text" id="chat-input" placeholder="e.g. What's the #1 pain point?" disabled>
+        <button class="btn btn-primary btn-sm" id="chat-send" onclick="sendInsight()" disabled>Ask</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Report Modal -->
+<div class="modal-backdrop" id="modal" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Interview Report</h3>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <pre id="modal-body"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  const statusLabel = {
+    pending:     '○ Pending',
+    in_progress: '● In Progress',
+    completed:   '✓ Completed',
+  };
+
+  // --- Config ---
+
+  async function loadConfig() {
+    const res = await fetch('/api/config');
+    const data = await res.json();
+    document.getElementById('icp').value = data.icp || '';
+    document.getElementById('hypotheses').value = (data.hypotheses || []).join('\n');
+  }
+
+  async function saveConfig() {
+    const icp = document.getElementById('icp').value.trim();
+    const hypotheses = document.getElementById('hypotheses').value
+      .split('\n').map(h => h.trim()).filter(Boolean);
+    const status = document.getElementById('save-status');
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ icp, hypotheses }),
+      });
+      if (!res.ok) throw new Error();
+      status.textContent = 'Saved';
+      status.className = 'save-status ok';
+      setTimeout(() => { status.textContent = ''; status.className = 'save-status'; }, 2000);
+    } catch {
+      status.textContent = 'Save failed';
+      status.className = 'save-status err';
+    }
+  }
+
+  // --- Interviews ---
+
+  let interviews = [];
+
+  async function loadInterviews() {
+    const res = await fetch('/api/interviews');
+    interviews = await res.json();
+    renderInterviews();
+  }
+
+  function renderInterviews() {
+    const list = document.getElementById('interview-list');
+    const empty = document.getElementById('empty-state');
+    if (interviews.length === 0) {
+      empty.style.display = 'block';
+      list.querySelectorAll('.interview-card').forEach(el => el.remove());
+      return;
+    }
+    empty.style.display = 'none';
+    list.querySelectorAll('.interview-card').forEach(el => el.remove());
+    for (const iv of interviews) {
+      const card = document.createElement('div');
+      card.className = 'interview-card';
+      card.dataset.id = iv.id;
+      card.innerHTML = `
+        <div class="interview-card-top">
+          <span class="interview-name" title="${iv.name}">${iv.name}</span>
+          <span class="status-badge status-${iv.status}">${statusLabel[iv.status] || iv.status}</span>
+        </div>
+        <div class="interview-card-actions">
+          <button class="btn btn-ghost btn-sm" onclick="copyLink('${iv.url}', this)">Copy Link</button>
+          ${iv.status === 'completed' ? `<button class="btn btn-ghost btn-sm" onclick="viewReport('${iv.id}')">View Report</button>` : ''}
+        </div>
+      `;
+      list.appendChild(card);
+    }
+
+    // Enable insights panel if any completed interviews exist
+    const hasCompleted = interviews.some(iv => iv.status === 'completed');
+    document.getElementById('chat-input').disabled = !hasCompleted;
+    document.getElementById('chat-send').disabled = !hasCompleted;
+  }
+
+  function toggleCreateForm() {
+    const form = document.getElementById('create-form');
+    form.classList.toggle('hidden');
+    if (!form.classList.contains('hidden')) {
+      document.getElementById('new-name').focus();
+    }
+  }
+
+  async function createInterview() {
+    const name = document.getElementById('new-name').value.trim();
+    const notes = document.getElementById('new-notes').value.trim();
+    const status = document.getElementById('create-status');
+    if (!name) {
+      status.textContent = 'Name is required';
+      status.className = 'save-status err';
+      return;
+    }
+    try {
+      const res = await fetch('/api/interviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, notes: notes || null }),
+      });
+      if (!res.ok) throw new Error();
+      document.getElementById('new-name').value = '';
+      document.getElementById('new-notes').value = '';
+      status.textContent = '';
+      toggleCreateForm();
+      await loadInterviews();
+    } catch {
+      status.textContent = 'Failed to create';
+      status.className = 'save-status err';
+    }
+  }
+
+  function copyLink(url, btn) {
+    navigator.clipboard.writeText(url).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    });
+  }
+
+  async function viewReport(id) {
+    const res = await fetch(`/api/interviews/${id}`);
+    const data = await res.json();
+    document.getElementById('modal-title').textContent = data.name;
+    document.getElementById('modal-body').textContent = data.report || 'No report available.';
+    document.getElementById('modal').classList.add('open');
+  }
+
+  function closeModal(e) {
+    if (!e || e.target === document.getElementById('modal') || e.currentTarget === document.querySelector('.btn')) {
+      document.getElementById('modal').classList.remove('open');
+    }
+  }
+
+  // --- Insights ---
+
+  async function sendInsight() {
+    const input = document.getElementById('chat-input');
+    const question = input.value.trim();
+    if (!question) return;
+    input.value = '';
+    appendChat('user', question);
+    const thinking = appendChat('assistant', 'Thinking…');
+    try {
+      const res = await fetch('/api/insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+      const data = await res.json();
+      thinking.querySelector('.msg-text').textContent = data.answer;
+    } catch {
+      thinking.querySelector('.msg-text').textContent = 'Could not get answer — try again.';
+    }
+  }
+
+  function appendChat(role, text) {
+    const history = document.getElementById('chat-history');
+    history.querySelector('.empty-state')?.remove();
+    const div = document.createElement('div');
+    div.className = `chat-msg ${role}`;
+    div.innerHTML = `<div class="label">${role === 'user' ? 'You' : 'Insight Loop'}</div><div class="msg-text">${text}</div>`;
+    history.appendChild(div);
+    history.scrollTop = history.scrollHeight;
+    return div;
+  }
+
+  document.getElementById('chat-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendInsight();
+  });
+
+  document.getElementById('new-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') createInterview();
+  });
+
+  // --- Panel resizing ---
+
+  function makeResizer(resizerId, leftPanelId, rightPanelId) {
+    const resizer = document.getElementById(resizerId);
+    const leftPanel = document.getElementById(leftPanelId);
+    const rightPanel = document.getElementById(rightPanelId);
+    const MIN = 180;
+
+    resizer.addEventListener('mousedown', e => {
+      e.preventDefault();
+      resizer.classList.add('active');
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+
+      const startX = e.clientX;
+      const startLeftW = leftPanel.getBoundingClientRect().width;
+      const startRightW = rightPanel.getBoundingClientRect().width;
+
+      function onMove(e) {
+        const dx = e.clientX - startX;
+        const newLeft = Math.max(MIN, startLeftW + dx);
+        const newRight = Math.max(MIN, startRightW - dx);
+        leftPanel.style.width = newLeft + 'px';
+        leftPanel.style.flex = 'none';
+        rightPanel.style.width = newRight + 'px';
+        rightPanel.style.flex = 'none';
+      }
+
+      function onUp() {
+        resizer.classList.remove('active');
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  makeResizer('resizer-1', 'panel-setup', 'panel-interviews');
+  makeResizer('resizer-2', 'panel-interviews', 'panel-insights');
+
+  // --- Init + polling ---
+
+  loadConfig();
+  loadInterviews();
+  setInterval(loadInterviews, 5000);
+</script>
 </body>
 </html>

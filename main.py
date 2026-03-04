@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -70,6 +71,56 @@ def save_config(payload: ConfigPayload):
     }
     write_json(CONFIG_FILE, config)
     return config
+
+
+# --- Interview API ---
+
+class InterviewPayload(BaseModel):
+    name: str
+    notes: str | None = None
+
+
+@app.post("/api/interviews", status_code=201)
+def create_interview(payload: InterviewPayload):
+    interview_id = str(uuid4())
+    url = f"{BASE_URL}/interview/{interview_id}"
+    meta = {
+        "id": interview_id,
+        "name": payload.name,
+        "notes": payload.notes or "",
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "completed_at": None,
+        "url": url,
+    }
+    write_json(INTERVIEWS_DIR / interview_id / "meta.json", meta)
+    return {"id": interview_id, "url": url}
+
+
+@app.get("/api/interviews")
+def list_interviews():
+    interviews = []
+    for meta_file in INTERVIEWS_DIR.glob("*/meta.json"):
+        meta = read_json(meta_file)
+        if meta:
+            interviews.append(meta)
+    interviews.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return interviews
+
+
+@app.get("/api/interviews/{interview_id}")
+def get_interview(interview_id: str):
+    interview_dir = INTERVIEWS_DIR / interview_id
+    meta = read_json(interview_dir / "meta.json")
+    if not meta:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    result = dict(meta)
+    if meta.get("status") == "completed":
+        extracted = read_json(interview_dir / "extracted.json")
+        report_path = interview_dir / "report.md"
+        result["extracted"] = extracted
+        result["report"] = report_path.read_text(encoding="utf-8") if report_path.exists() else None
+    return result
 
 
 # --- Static files + SPA routes ---
