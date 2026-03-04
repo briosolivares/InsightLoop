@@ -19,7 +19,14 @@
   - 5-second polling to keep status badges live
   - Committed ✓
 
-- [ ] **Step 3: Interview page, Realtime session token, and live AI interview**
+- [x] **Step 3: Interview page, Realtime session token, and live AI interview**
+  - `POST /api/interviews/:id/session-token` — builds system prompt from ICP + hypotheses, creates OpenAI Realtime session, updates status to `in_progress`, returns ephemeral `client_secret`
+  - `POST /api/interviews/:id/complete` — stub: saves `transcript.json`, marks status `completed` (post-processing added in Step 4)
+  - `public/interview.html` — 4-state UI (waiting-for-mic → connecting → in_progress → completed)
+  - WebRTC connects browser directly to OpenAI Realtime API using ephemeral token
+  - Accumulates transcript from `response.audio_transcript.done` + `conversation.item.input_audio_transcription.completed` events
+  - Detects `finish_interview` tool call from AI via `response.done` event to trigger `/complete`
+  - AI given `finish_interview` function tool + full system prompt with ICP + hypotheses
 
 - [ ] **Step 4: Interview completion, post-processing, and structured output**
 

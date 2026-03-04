@@ -1,5 +1,7 @@
 import json
 import os
+import urllib.request
+import urllib.error
 from pathlib import Path
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -121,6 +123,101 @@ def get_interview(interview_id: str):
         result["extracted"] = extracted
         result["report"] = report_path.read_text(encoding="utf-8") if report_path.exists() else None
     return result
+
+
+# --- Session token + interview lifecycle ---
+
+SYSTEM_PROMPT_TEMPLATE = """You are a professional market research interviewer conducting a research \
+interview on behalf of a founder.
+
+Ideal Customer Profile:
+{icp}
+
+Hypotheses to validate:
+{hypotheses}
+
+Instructions:
+- Introduce yourself warmly as an AI research assistant
+- Ask open-ended questions to probe each hypothesis
+- Ask natural follow-up questions based on what the interviewee says
+- Be conversational, curious, and empathetic — not robotic
+- Cover all hypotheses before ending
+- After covering all hypotheses, thank the interviewee warmly, then call the \
+finish_interview function to end the session
+- Keep the interview to approximately 15-20 minutes"""
+
+
+@app.post("/api/interviews/{interview_id}/session-token")
+def get_session_token(interview_id: str):
+    interview_dir = INTERVIEWS_DIR / interview_id
+    meta = read_json(interview_dir / "meta.json")
+    if not meta:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    if meta["status"] == "completed":
+        raise HTTPException(status_code=409, detail="Interview already completed")
+
+    config = read_json(CONFIG_FILE) or {}
+    icp = config.get("icp") or "Not specified"
+    hypotheses = config.get("hypotheses") or []
+    hypotheses_text = "\n".join(f"{i+1}. {h}" for i, h in enumerate(hypotheses)) or "None provided"
+
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(icp=icp, hypotheses=hypotheses_text)
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    payload = json.dumps({
+        "model": "gpt-4o-realtime-preview",
+        "modalities": ["audio", "text"],
+        "voice": "alloy",
+        "instructions": system_prompt,
+        "input_audio_transcription": {"model": "whisper-1"},
+        "turn_detection": {"type": "server_vad"},
+        "tools": [{
+            "type": "function",
+            "name": "finish_interview",
+            "description": "Call this when you have covered all hypotheses and are ready to end the interview.",
+            "parameters": {"type": "object", "properties": {}},
+        }],
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/realtime/sessions",
+        data=payload,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            session_data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"OpenAI API error: {e.read().decode()}")
+
+    meta["status"] = "in_progress"
+    write_json(interview_dir / "meta.json", meta)
+
+    return {"client_secret": session_data["client_secret"]["value"]}
+
+
+class CompletePayload(BaseModel):
+    transcript: list
+
+
+@app.post("/api/interviews/{interview_id}/complete")
+def complete_interview(interview_id: str, payload: CompletePayload):
+    interview_dir = INTERVIEWS_DIR / interview_id
+    meta = read_json(interview_dir / "meta.json")
+    if not meta:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    if meta["status"] == "completed":
+        raise HTTPException(status_code=409, detail="Interview already completed")
+
+    write_json(interview_dir / "transcript.json", payload.transcript)
+
+    meta["status"] = "completed"
+    meta["completed_at"] = datetime.now(timezone.utc).isoformat()
+    write_json(interview_dir / "meta.json", meta)
+
+    # Post-processing (GPT-4o extraction + report) added in Step 4
+    return {"success": True}
 
 
 # --- Static files + SPA routes ---

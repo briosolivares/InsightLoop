@@ -2,9 +2,308 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Interview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research Interview</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+    }
+
+    .card {
+      background: #161616;
+      border: 1px solid #222;
+      border-radius: 16px;
+      padding: 48px 56px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      width: 420px;
+    }
+
+    .logo { font-size: 13px; font-weight: 600; color: #444; letter-spacing: 0.08em; text-transform: uppercase; }
+
+    h1 { font-size: 22px; font-weight: 600; color: #fff; }
+
+    .status-msg {
+      font-size: 14px;
+      color: #777;
+      line-height: 1.6;
+      min-height: 44px;
+    }
+
+    .indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #333;
+    }
+    .indicator.pulse {
+      background: #3b82f6;
+      box-shadow: 0 0 0 0 rgba(59,130,246,0.5);
+      animation: pulse 1.5s infinite;
+    }
+    .indicator.done { background: #22c55e; }
+    .indicator.error { background: #ef4444; }
+
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0 0 rgba(59,130,246,0.5); }
+      70%  { box-shadow: 0 0 0 10px rgba(59,130,246,0); }
+      100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+    }
+
+    .btn {
+      padding: 12px 28px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      background: #2563eb;
+      color: #fff;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.hidden { display: none; }
+
+    .error-msg { font-size: 13px; color: #ef4444; display: none; }
+  </style>
 </head>
 <body>
-  <h1>Interview page coming in Step 3.</h1>
+
+<div class="card">
+  <div class="logo">Insight Loop</div>
+  <h1>Research Interview</h1>
+  <div class="indicator" id="indicator"></div>
+  <p class="status-msg" id="status-msg">
+    Click below to allow microphone access and begin your interview.
+  </p>
+  <button class="btn" id="start-btn" onclick="startInterview()">Start Interview</button>
+  <p class="error-msg" id="error-msg"></p>
+</div>
+
+<script>
+  const interviewId = location.pathname.split('/').pop();
+  const transcript = [];
+
+  let peerConnection = null;
+  let dataChannel = null;
+
+  // --- State machine ---
+
+  const states = {
+    'waiting-for-mic': {
+      indicator: '',
+      msg: 'Click below to allow microphone access and begin your interview.',
+      showBtn: true,
+    },
+    'connecting': {
+      indicator: 'pulse',
+      msg: 'Connecting to your interviewer…',
+      showBtn: false,
+    },
+    'in_progress': {
+      indicator: 'pulse',
+      msg: 'Interview in progress. Please speak naturally.',
+      showBtn: false,
+    },
+    'completed': {
+      indicator: 'done',
+      msg: 'Interview complete. Thank you for your time!',
+      showBtn: false,
+    },
+    'error': {
+      indicator: 'error',
+      msg: '',
+      showBtn: false,
+    },
+  };
+
+  function setState(state, errorText) {
+    const s = states[state];
+    const indicator = document.getElementById('indicator');
+    indicator.className = 'indicator ' + (s.indicator || '');
+    document.getElementById('status-msg').textContent = s.msg;
+    document.getElementById('start-btn').classList.toggle('hidden', !s.showBtn);
+    if (state === 'error') {
+      const el = document.getElementById('error-msg');
+      el.textContent = errorText || 'Something went wrong. Please close this tab and try again.';
+      el.style.display = 'block';
+    }
+  }
+
+  // --- Main flow ---
+
+  async function startInterview() {
+    setState('connecting');
+
+    // 1. Request microphone
+    let localStream;
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setState('error', 'Microphone access is required to join this interview.');
+      return;
+    }
+
+    // 2. Get ephemeral session token from backend
+    let clientSecret;
+    try {
+      console.log('[1] Requesting session token...');
+      const res = await fetch(`/api/interviews/${interviewId}/session-token`, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to get session token');
+      }
+      const data = await res.json();
+      clientSecret = data.client_secret;
+      console.log('[2] Session token received ✓');
+    } catch (e) {
+      console.error('[ERROR] Session token failed:', e.message);
+      setState('error', e.message);
+      return;
+    }
+
+    // 3. Set up WebRTC peer connection
+    peerConnection = new RTCPeerConnection();
+    console.log('[3] RTCPeerConnection created');
+
+    // Play AI audio in browser
+    const audioEl = document.createElement('audio');
+    audioEl.autoplay = true;
+    document.body.appendChild(audioEl);
+    peerConnection.ontrack = e => {
+      console.log('[✓] Remote audio track received');
+      audioEl.srcObject = e.streams[0];
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      console.log('[WebRTC] Connection state:', peerConnection.connectionState);
+    };
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('[WebRTC] ICE state:', peerConnection.iceConnectionState);
+    };
+
+    // Add local mic track
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+    console.log('[4] Local mic track added');
+
+    // Data channel for Realtime API events
+    dataChannel = peerConnection.createDataChannel('oai-events');
+    dataChannel.onopen = () => {
+      console.log('[5] Data channel open — interview in progress');
+      setState('in_progress');
+    };
+    dataChannel.onmessage = handleEvent;
+    dataChannel.onerror = e => console.error('[ERROR] Data channel error:', e);
+
+    // 4. SDP offer → OpenAI → SDP answer
+    try {
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      console.log('[6] SDP offer created, sending to OpenAI...');
+
+      const sdpRes = await fetch(
+        `https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${clientSecret}`,
+            'Content-Type': 'application/sdp',
+          },
+          body: offer.sdp,
+        }
+      );
+      if (!sdpRes.ok) {
+        const errText = await sdpRes.text();
+        throw new Error(`OpenAI SDP error ${sdpRes.status}: ${errText}`);
+      }
+      const answerSdp = await sdpRes.text();
+      await peerConnection.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+      console.log('[7] SDP answer set — WebRTC handshake complete ✓');
+    } catch (e) {
+      console.error('[ERROR] WebRTC setup failed:', e.message);
+      setState('error', e.message);
+      return;
+    }
+  }
+
+  // --- Event handling ---
+
+  function handleEvent(e) {
+    let event;
+    try { event = JSON.parse(e.data); } catch { return; }
+
+    console.log('[event]', event.type, event);
+
+    switch (event.type) {
+
+      // Capture assistant speech transcript
+      case 'response.audio_transcript.done':
+        if (event.transcript) {
+          transcript.push({
+            role: 'assistant',
+            content: event.transcript,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        break;
+
+      // Capture user speech transcript
+      case 'conversation.item.input_audio_transcription.completed':
+        if (event.transcript) {
+          transcript.push({
+            role: 'user',
+            content: event.transcript,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        break;
+
+      // AI called finish_interview — end the session
+      case 'response.done':
+        if (event.response?.output) {
+          const hasFinish = event.response.output.some(
+            o => o.type === 'function_call' && o.name === 'finish_interview'
+          );
+          if (hasFinish) finishInterview();
+        }
+        break;
+    }
+  }
+
+  // --- Completion ---
+
+  async function finishInterview() {
+    setState('completed');
+
+    if (peerConnection) {
+      peerConnection.getSenders().forEach(s => s.track?.stop());
+      peerConnection.close();
+    }
+
+    try {
+      await fetch(`/api/interviews/${interviewId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript }),
+      });
+    } catch {
+      // Status still shows completed to the user; backend will handle on retry if needed
+    }
+  }
+</script>
 </body>
 </html>
