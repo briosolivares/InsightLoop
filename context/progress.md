@@ -36,7 +36,13 @@
   - Both `extracted.json` and `report.md` verified against real GPT-4o output
   - Dashboard "View Report" button already wired — surfaces report on completion
 
-- [ ] **Step 5: Insights Q&A panel**
+- [x] **Step 5: Insights Q&A panel**
+  - `POST /api/insights` — loads all completed interviews' `extracted.json`, passes structured context to GPT-4o, returns answer
+  - `prompts/insights_qa.txt` — prompt template with `{interview_count}`, `{context}`, `{question}` placeholders
+  - `run_insights()` in `agent.py` — formats extracted data per interview, calls GPT-4o
+  - `InsightsPayload` Pydantic model in `main.py`
+  - Dashboard chat input already wired — sends question, renders answer inline
+  - Chat input auto-enables when at least one completed interview exists
 
 ---
 
@@ -46,3 +52,5 @@
 - Virtual environment at `.venv/` — run with `source .venv/bin/activate && python main.py`
 - ngrok URL: `https://jonathon-palaeoentomological-bev.ngrok-free.dev` (set as `BASE_URL` in `.env`)
 - Design doc and implementation plan updated to reflect FastAPI stack
+- `main.py` refactored into `storage.py` (file I/O), `agent.py` (all OpenAI logic), `main.py` (routes only)
+- `load_dotenv()` called in both `main.py` and `agent.py` — agent.py initializes the OpenAI client at import time
