@@ -20,14 +20,6 @@ def read_json(filepath: Path) -> dict | None:
         return None
 
 
-def read_json_list(filepath: Path) -> list | None:
-    try:
-        data = json.loads(filepath.read_text())
-        return data if isinstance(data, list) else None
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
-
-
 def write_json(filepath: Path, data: dict | list) -> None:
     filepath.parent.mkdir(parents=True, exist_ok=True)
     filepath.write_text(json.dumps(data, indent=2), encoding="utf-8")
