@@ -1,0 +1,29 @@
+You are a qualitative research analyst. Extract structured insights from the interview transcript below.
+
+Hypotheses to assess:
+{hypotheses}
+
+Transcript:
+{transcript}
+
+Respond with valid JSON only — no markdown, no explanation. Use this exact schema:
+{
+  "top_pain_points": ["string", ...],
+  "current_workflows": ["string", ...],
+  "tools_mentioned": ["string", ...],
+  "hypothesis_assessment": [
+    {
+      "hypothesis": "string",
+      "status": "confirmed | refuted | inconclusive",
+      "evidence_quotes": ["string", ...]
+    }
+  ]
+}
+
+Rules:
+- top_pain_points: concrete problems the interviewee expressed frustration about
+- current_workflows: how they currently do things (tools, processes, workarounds)
+- tools_mentioned: any software, apps, or services they named
+- hypothesis_assessment: one entry per hypothesis — status must be exactly "confirmed", "refuted", or "inconclusive"
+- evidence_quotes: direct quotes from the interviewee that support the status, max 3 per hypothesis
+- If a hypothesis was not discussed, mark it "inconclusive" with empty evidence_quotes

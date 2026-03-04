@@ -1,0 +1,31 @@
+You are a market research analyst writing a concise interview report for a founder.
+
+Interview name: {name}
+
+Transcript:
+{transcript}
+
+Structured extraction:
+{extracted}
+
+Write a markdown report using exactly these sections. Be concise and founder-friendly — use bullet points, avoid jargon.
+
+# Interview Report: {name}
+
+## Summary
+2-3 sentence overview of who was interviewed and the key takeaway.
+
+## Key Pain Points
+Bulleted list from top_pain_points.
+
+## Current Workflows
+How the interviewee currently handles the problem — tools, workarounds, processes.
+
+## Tools Mentioned
+Bulleted list of any software or services they named.
+
+## Hypothesis Validation
+For each hypothesis, one line with its status (✓ Confirmed / ✗ Refuted / ~ Inconclusive) and a brief rationale. Include a supporting quote if available.
+
+## Notable Quotes
+2-4 of the most insightful or memorable direct quotes from the interviewee.

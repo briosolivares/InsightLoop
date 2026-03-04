@@ -28,7 +28,13 @@
   - Detects `finish_interview` tool call from AI via `response.done` event to trigger `/complete`
   - AI given `finish_interview` function tool + full system prompt with ICP + hypotheses
 
-- [ ] **Step 4: Interview completion, post-processing, and structured output**
+- [x] **Step 4: Interview completion, post-processing, and structured output**
+  - `POST /complete` enhanced: saves transcript → GPT-4o extraction → GPT-4o report → marks completed
+  - `prompts/extract_insights.txt` — structured extraction prompt (pain points, workflows, tools, hypothesis assessment)
+  - `prompts/generate_report.txt` — markdown report prompt
+  - `fill_template()` helper replaces `.format()` to avoid Python treating JSON braces in templates as placeholders
+  - Both `extracted.json` and `report.md` verified against real GPT-4o output
+  - Dashboard "View Report" button already wired — surfaces report on completion
 
 - [ ] **Step 5: Insights Q&A panel**
 

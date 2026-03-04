@@ -11,10 +11,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from openai import OpenAI
 
 load_dotenv()
 
 app = FastAPI()
+openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 BASE_URL = os.getenv("BASE_URL", "http://localhost:3000")
 DATA_DIR = Path("data")
@@ -127,7 +129,59 @@ def get_interview(interview_id: str):
 
 # --- Session token + interview lifecycle ---
 
-SYSTEM_PROMPT_TEMPLATE = Path("prompts/interview_system.txt").read_text(encoding="utf-8")
+SYSTEM_PROMPT_TEMPLATE  = Path("prompts/interview_system.txt").read_text(encoding="utf-8")
+EXTRACT_PROMPT_TEMPLATE = Path("prompts/extract_insights.txt").read_text(encoding="utf-8")
+REPORT_PROMPT_TEMPLATE  = Path("prompts/generate_report.txt").read_text(encoding="utf-8")
+
+
+def format_transcript(transcript: list) -> str:
+    lines = []
+    for turn in transcript:
+        role = "Interviewer" if turn.get("role") == "assistant" else "Interviewee"
+        lines.append(f"{role}: {turn.get('content', '').strip()}")
+    return "\n".join(lines)
+
+
+def parse_json_response(text: str) -> dict:
+    """Parse JSON from model response, stripping markdown fences if present."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    return json.loads(text.strip())
+
+
+def fill_template(template: str, **kwargs) -> str:
+    """Safe template fill using replace() — avoids .format() choking on JSON braces in templates."""
+    result = template
+    for key, value in kwargs.items():
+        result = result.replace("{" + key + "}", value)
+    return result
+
+
+def run_extraction(transcript_text: str, hypotheses: list) -> dict:
+    hypotheses_text = "\n".join(f"{i+1}. {h}" for i, h in enumerate(hypotheses)) or "None provided"
+    prompt = fill_template(EXTRACT_PROMPT_TEMPLATE, hypotheses=hypotheses_text, transcript=transcript_text)
+    response = openai_client.chat.completions.create(
+        model="gpt-4o",
+        response_format={"type": "json_object"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return parse_json_response(response.choices[0].message.content)
+
+
+def run_report(name: str, transcript_text: str, extracted: dict) -> str:
+    prompt = fill_template(
+        REPORT_PROMPT_TEMPLATE,
+        name=name,
+        transcript=transcript_text,
+        extracted=json.dumps(extracted, indent=2),
+    )
+    response = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.choices[0].message.content
 
 
 @app.post("/api/interviews/{interview_id}/session-token")
@@ -193,13 +247,33 @@ def complete_interview(interview_id: str, payload: CompletePayload):
     if meta["status"] == "completed":
         raise HTTPException(status_code=409, detail="Interview already completed")
 
+    # Save raw transcript
     write_json(interview_dir / "transcript.json", payload.transcript)
 
+    transcript_text = format_transcript(payload.transcript)
+    config = read_json(CONFIG_FILE) or {}
+    hypotheses = config.get("hypotheses") or []
+
+    # GPT-4o call 1: structured extraction
+    try:
+        extracted = run_extraction(transcript_text, hypotheses)
+    except Exception as e:
+        extracted = {"error": str(e), "top_pain_points": [], "current_workflows": [],
+                     "tools_mentioned": [], "hypothesis_assessment": []}
+    write_json(interview_dir / "extracted.json", extracted)
+
+    # GPT-4o call 2: markdown report
+    try:
+        report = run_report(meta["name"], transcript_text, extracted)
+    except Exception as e:
+        report = f"# Interview Report: {meta['name']}\n\nReport generation failed: {e}\n\nRaw transcript saved."
+    (interview_dir / "report.md").write_text(report, encoding="utf-8")
+
+    # Mark completed
     meta["status"] = "completed"
     meta["completed_at"] = datetime.now(timezone.utc).isoformat()
     write_json(interview_dir / "meta.json", meta)
 
-    # Post-processing (GPT-4o extraction + report) added in Step 4
     return {"success": True}
 
 
